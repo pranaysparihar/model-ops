@@ -28,7 +28,7 @@ Actual GPU inference, model accuracy, NVIDIA scheduling, hardware-dependent vLLM
 ## Infrastructure extension — 8 October 2026
 
 - Terraform 1.16.5 validated both AWS and state-bootstrap roots against the downloaded, locked providers and pinned modules.
-- Five mocked Terraform tests passed: secure state, private defaults/scoped secret IAM, rejected public `/0` API access, rejected IAM user operator, and optional budget activation. Mock tests do not contact AWS.
+- Six mocked Terraform tests passed: secure state, private defaults/scoped secret IAM, rejected public `/0` and IPv6 `/32` API access, rejected IAM user operator, and optional budget activation. Mock tests do not contact AWS.
 - The pinned Argo CD, Karpenter, GPU Operator, External Secrets and kube-prometheus-stack charts rendered successfully with the composed values.
 - Ten platform rendering tests cover fail-closed GPU enablement, AMI requirements, digest/revision promotion, manual workload sync, restricted Argo project, quota and driver ownership contracts.
 - Promtool GPU rule tests exercise hardware-error and memory-pressure firing, telemetry absence, healthy telemetry and CPU-only no-alert behavior.

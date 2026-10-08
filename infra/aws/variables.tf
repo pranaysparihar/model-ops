@@ -31,7 +31,7 @@ variable "admin_cidrs" {
   type        = list(string)
   default     = []
   validation {
-    condition     = alltrue([for cidr in var.admin_cidrs : can(cidrhost(cidr, 0)) && endswith(cidr, "/32")])
+    condition     = alltrue([for cidr in var.admin_cidrs : can(cidrhost(cidr, 0)) && can(regex("^[0-9.]+/32$", cidr))])
     error_message = "Public API access is restricted to explicit IPv4 /32 addresses."
   }
 }

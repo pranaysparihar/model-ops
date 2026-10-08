@@ -61,3 +61,9 @@ run "budget_is_opt_in" {
     error_message = "An explicit recipient must activate the configured budget alert."
   }
 }
+
+run "reject_ipv6_network" {
+  command = plan
+  variables { admin_cidrs = ["2001:db8::/32"] }
+  expect_failures = [var.admin_cidrs]
+}
