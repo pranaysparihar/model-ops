@@ -1,0 +1,165 @@
+{{- if not (has .Values.backend.mode (list "simulator" "vllm")) }}
+{{- fail "backend.mode must be simulator or vllm" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-gateway
+spec:
+  replicas: {{ .Values.replicas }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  selector:
+    matchLabels: {app: {{ .Release.Name }}-gateway}
+  template:
+    metadata:
+      labels: {app: {{ .Release.Name }}-gateway, modelops-role: gateway}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: gateway
+          image: '{{ .Values.image.repository }}:{{ .Values.image.tag }}'
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports: [{containerPort: 8000, name: http}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          env:
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.apiKeySecret }}, key: api-key}
+            - {name: BACKEND_URL, value: 'http://{{ .Release.Name }}-backend:8001'}
+            - {name: MODEL, value: {{ .Values.model | quote }}}
+            - {name: MAX_INFLIGHT, value: {{ .Values.maxInflight | quote }}}
+            - {name: MAX_TOKENS, value: {{ .Values.maxTokens | quote }}}
+            - {name: UPSTREAM_TIMEOUT_SECONDS, value: {{ .Values.timeoutSeconds | quote }}}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: '1', memory: 256Mi}
+          startupProbe:
+            httpGet: {path: /health/live, port: http}
+            failureThreshold: 30
+            periodSeconds: 2
+          readinessProbe:
+            httpGet: {path: /health/ready, port: http}
+            timeoutSeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health/live, port: http}
+            periodSeconds: 10
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes: [{name: tmp, emptyDir: {}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: {{ .Release.Name }}-gateway}
+spec:
+  selector: {app: {{ .Release.Name }}-gateway}
+  ports: [{name: http, port: 8000, targetPort: http}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: {{ .Release.Name }}-gateway}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app: {{ .Release.Name }}-gateway}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: {{ .Release.Name }}-backend}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: {{ .Release.Name }}-backend}
+  template:
+    metadata:
+      labels: {app: {{ .Release.Name }}-backend, modelops-role: backend}
+    spec:
+      automountServiceAccountToken: false
+      {{- if eq .Values.backend.mode "vllm" }}
+      nodeSelector: {{ .Values.backend.nodeSelector | toJson }}
+      tolerations: {{ .Values.backend.tolerations | toJson }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: backend
+          {{- if eq .Values.backend.mode "simulator" }}
+          image: '{{ .Values.image.repository }}:{{ .Values.image.tag }}'
+          command: [uvicorn, 'app.simulator:app', '--host', '0.0.0.0', '--port', '8001', '--no-access-log']
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: '1', memory: 256Mi}
+          {{- else }}
+          image: {{ .Values.backend.image | quote }}
+          args: ['--model', {{ .Values.backend.model | quote }}, '--served-model-name', {{ .Values.model | quote }}, '--port', '8001', '--max-model-len', '2048', '--gpu-memory-utilization', '0.85']
+          env:
+            - {name: HF_HOME, value: /cache}
+            - {name: HOME, value: /tmp}
+            - {name: VLLM_CACHE_ROOT, value: /cache/vllm}
+          resources:
+            requests: {cpu: '2', memory: 4Gi, nvidia.com/gpu: '1'}
+            limits: {cpu: '4', memory: 8Gi, nvidia.com/gpu: '1'}
+          {{- end }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports: [{name: http, containerPort: 8001}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          startupProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+            failureThreshold: 90
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+            failureThreshold: 3
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            {{- if eq .Values.backend.mode "vllm" }}
+            - {name: cache, mountPath: /cache}
+            - {name: shm, mountPath: /dev/shm}
+            {{- end }}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+        {{- if eq .Values.backend.mode "vllm" }}
+        - name: cache
+          persistentVolumeClaim: {claimName: {{ .Release.Name }}-model-cache}
+        - name: shm
+          emptyDir: {medium: Memory, sizeLimit: 1Gi}
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: {{ .Release.Name }}-backend}
+spec:
+  selector: {app: {{ .Release.Name }}-backend}
+  ports: [{port: 8001, targetPort: http, name: http}]
+{{- if eq .Values.backend.mode "vllm" }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: {{ .Release.Name }}-model-cache}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: {{ .Values.backend.storageSize }}}
+{{- end }}

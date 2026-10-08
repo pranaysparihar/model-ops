@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.env
+*.kubeconfig
+*.tfstate*
+.terraform/
+artifacts/
+.DS_Store

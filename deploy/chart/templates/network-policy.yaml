@@ -1,0 +1,13 @@
+# Requires a NetworkPolicy-capable CNI (kind's default CNI does not enforce it).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: {{ .Release.Name }}-backend-ingress}
+spec:
+  podSelector:
+    matchLabels: {app: {{ .Release.Name }}-backend}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: {{ .Release.Name }}-gateway}
+      ports: [{protocol: TCP, port: 8001}]

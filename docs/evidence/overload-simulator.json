@@ -1,0 +1,12 @@
+{
+  "workload": "closed-loop fixed short text, max_tokens=16",
+  "requests": 100,
+  "concurrency": 8,
+  "elapsed_seconds": 0.189,
+  "statuses": {
+    "429": 96,
+    "200": 4
+  },
+  "successful_completion_p50_seconds": 0.18575160403270274,
+  "successful_completion_p95_seconds": 0.1860306658782065
+}

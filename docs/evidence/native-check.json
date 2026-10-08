@@ -1,0 +1,11 @@
+{
+  "backend": "deterministic CPU simulator; no model inference",
+  "checks": [
+    "anonymous completion rejected",
+    "authenticated simulator completion returned",
+    "dependency failure removes readiness without killing gateway",
+    "dependency recovery restores service",
+    "failure recorded in Prometheus metrics"
+  ],
+  "result": "passed"
+}

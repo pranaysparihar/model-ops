@@ -1,0 +1,21 @@
+image:
+  repository: modelops
+  tag: local
+  pullPolicy: IfNotPresent
+replicas: 2
+apiKeySecret: modelops-api-key
+model: demo-model
+maxInflight: 4
+maxTokens: 256
+timeoutSeconds: 10
+backend:
+  mode: simulator
+  image: vllm/vllm-openai:v0.31.0
+  model: Qwen/Qwen2.5-0.5B-Instruct
+  storageSize: 10Gi
+  nodeSelector: {}
+  tolerations: []
+monitoring:
+  enabled: false
+  prometheusImage: prom/prometheus:v3.15.0
+  grafanaImage: grafana/grafana:13.2.3

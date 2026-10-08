@@ -1,0 +1,55 @@
+name: Deploy verified image
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Full commit SHA from a successful Verify platform run'
+        required: true
+      profile:
+        description: Deployment profile
+        type: choice
+        options: [simulator, gpu]
+        default: simulator
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: staging-deployment
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.image_tag }}
+      - uses: azure/setup-helm@v4.3.0
+        with:
+          version: v3.17.3
+      - name: Verify requested revision passed CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          [[ "$IMAGE_TAG" =~ ^[0-9a-f]{40}$ ]]
+          gh run list --workflow ci.yml --commit "$IMAGE_TAG" --event push --status success --json headBranch --jq '.[].headBranch' | grep -qx main
+      - name: Load staging credentials and deploy
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+          API_KEY: ${{ secrets.MODELOPS_API_KEY }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          PROFILE: ${{ inputs.profile }}
+          IMAGE_REPOSITORY: ghcr.io/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          umask 077
+          export KUBECONFIG="$RUNNER_TEMP/modelops.kubeconfig"
+          trap 'rm -f "$KUBECONFIG"' EXIT
+          printf '%s' "$KUBECONFIG_B64" | base64 --decode > "$KUBECONFIG"
+          KUBE_CONTEXT=$(kubectl config current-context)
+          export KUBE_CONTEXT
+          if [[ "$PROFILE" == gpu ]]; then
+            export VALUES_FILE=deploy/environments/gpu.yaml MODEL=Qwen/Qwen2.5-0.5B-Instruct HELM_TIMEOUT=20m
+          fi
+          ./scripts/deploy.sh

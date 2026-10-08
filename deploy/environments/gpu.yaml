@@ -1,0 +1,10 @@
+# GPU profile: requires NVIDIA device plugin, a GPU node, and a default storage class.
+# Not used by local CI. Validate this on your actual GPU hardware before release.
+model: Qwen/Qwen2.5-0.5B-Instruct
+maxInflight: 4
+maxTokens: 128
+timeoutSeconds: 60
+backend:
+  mode: vllm
+  nodeSelector:
+    nvidia.com/gpu.present: 'true'

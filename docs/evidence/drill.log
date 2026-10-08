@@ -1,0 +1,37 @@
+Started: 2026-10-08T12:36:36Z
+Exercise 1: a bad image must fail deployment and preserve the working release.
+level=WARN msg="upgrade failed" name=modelops error="resource Deployment/modelops/modelops-gateway not ready. status: InProgress, message: Updated: 1/2\nresource Deployment/modelops/modelops-backend not ready. status: InProgress, message: Available: 0/1\ncontext deadline exceeded"
+Error: UPGRADE FAILED: release modelops failed, and has been rolled back due to rollback-on-failure being set: resource Deployment/modelops/modelops-gateway not ready. status: InProgress, message: Updated: 1/2
+resource Deployment/modelops/modelops-backend not ready. status: InProgress, message: Available: 0/1
+context deadline exceeded
+deployment "modelops-gateway" successfully rolled out
+PASS: bad release restored the original image.
+Exercise 2: readiness passes but authenticated smoke fails; restore previous revision.
+Release "modelops" has been upgraded. Happy Helming!
+NAME: modelops
+LAST DEPLOYED: Thu Oct  8 18:07:34 2026
+NAMESPACE: modelops
+STATUS: deployed
+REVISION: 7
+DESCRIPTION: Upgrade complete
+TEST SUITE: None
+FAIL: HTTPError: HTTP Error 401: Unauthorized
+Rollback was a success! Happy Helming!
+Functional check failed; restored revision 6.
+PASS: functional failure triggers explicit rollback.
+Exercise 3: terminate a backend pod and verify replacement plus a real request.
+pod "modelops-backend-7869b4c66d-wrpqt" deleted from modelops namespace
+Waiting for deployment "modelops-backend" rollout to finish: 0 of 1 updated replicas are available...
+deployment "modelops-backend" successfully rolled out
+Release "modelops" has been upgraded. Happy Helming!
+NAME: modelops
+LAST DEPLOYED: Thu Oct  8 18:07:47 2026
+NAMESPACE: modelops
+STATUS: deployed
+REVISION: 9
+DESCRIPTION: Upgrade complete
+TEST SUITE: None
+PASS: backend ready and authenticated completion returned
+Release passed functional verification.
+PASS: backend replaced and completion verified.
+Completed: 2026-10-08T12:37:48Z

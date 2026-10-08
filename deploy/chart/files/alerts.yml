@@ -1,0 +1,26 @@
+groups:
+  - name: modelops
+    rules:
+      - alert: ModelOpsFastErrorBudgetBurn
+        expr: |
+          (sum(rate(modelops_requests_total{outcome=~"upstream_error|timeout|overloaded"}[5m]))
+          / clamp_min(sum(rate(modelops_requests_total{outcome=~"success|upstream_error|timeout|overloaded"}[5m])), 0.001)) > 0.0144
+          and sum(increase(modelops_requests_total{outcome=~"success|upstream_error|timeout|overloaded"}[5m])) >= 20
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: 'Valid inference requests are consuming the 99.9% availability budget too quickly'
+          runbook_url: 'https://github.com/pranaysparihar/model-ops/blob/main/docs/runbook.md'
+      - alert: ModelOpsSlowCompletions
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(modelops_request_duration_seconds_bucket{outcome="success"}[5m]))) > 5
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: 'Successful completion p95 exceeds the simulator reference objective of 5 seconds'
+      - alert: ModelOpsScrapeMissing
+        expr: absent(up{job="modelops"}) or max(up{job="modelops"}) == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: 'All gateway scrape targets are unavailable'
