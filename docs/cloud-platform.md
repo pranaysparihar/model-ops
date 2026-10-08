@@ -44,7 +44,7 @@ The scripts never run Terraform apply. CI uses mocked providers without AWS cred
 
 `terraform -chdir=infra/aws output -json platform_values` returns non-secret identifiers for the `cloud` mapping in `platform/environments/aws.example.yaml`. Copy the example to `aws.yaml`, fill those identifiers, and commit the reviewed file. Start with `gpu.enabled=false` and `workload.enabled=false`. Environment identifiers are safe to version; secret values are not.
 
-Install repository access following [Argo CD's declarative repository setup](https://argo-cd.readthedocs.io/en/stable/operator-manual/declarative-setup/#repositories). This repo is private: create `argocd/modelops-repository` with `argocd.argoproj.io/secret-type: repository`, the matching HTTPS URL, and a dedicated read-only GitHub App/token credential. Do not reuse a personal write-capable token. The script can install Argo before this secret exists; it stops before adding the root app until the credential is supplied. Keep any temporary secret manifest outside Git and delete it after applying.
+ModelOps is public, so Argo CD needs no Git credential to fetch this repository. For a private repository, follow [Argo CD's declarative repository setup](https://argo-cd.readthedocs.io/en/stable/operator-manual/declarative-setup/#repositories) and use a dedicated read-only GitHub App/token credential. Keep secret manifests outside Git. GitHub repository visibility and GHCR package visibility are independent; a private container package still needs the image-pull credential described below.
 
 ```sh
 export KUBE_CONTEXT=your-explicit-eks-context

@@ -21,12 +21,8 @@ fi
 helm upgrade --install argocd argo-cd --repo https://argoproj.github.io/argo-helm \
   --version 10.10.1 --namespace argocd --kube-context "$KUBE_CONTEXT" \
   -f platform/bootstrap/argocd.yaml --wait --timeout 10m
-# For this private repo, first create a read-only repository credential using
-# Argo's documented Secret format. This script does not read your gh credentials.
-if ! "${k[@]}" -n argocd get secret modelops-repository >/dev/null 2>&1; then
-  echo 'Create argocd/modelops-repository with read-only repository access, then rerun.'
-  exit 1
-fi
+# ModelOps is public, so Argo can fetch it without a Git credential.
+# Private repositories need a read-only Argo repository Secret configured separately.
 export PLATFORM_VALUES PLATFORM_REVISION
 python3 - <<'PY' | "${k[@]}" apply -f -
 import json, os
