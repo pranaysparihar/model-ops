@@ -1,0 +1,118 @@
+{{- if .Values.monitoring.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: {name: modelops-observability, namespace: argocd, annotations: {argocd.argoproj.io/sync-wave: '-30'}}
+spec:
+  project: modelops-platform
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 92.1.1
+    helm:
+      releaseName: observability
+      valuesObject:
+        alertmanager:
+          alertmanagerSpec:
+            retention: 24h
+        grafana:
+          defaultDashboardsTimezone: utc
+          admin:
+            existingSecret: grafana-admin
+            userKey: admin-user
+            passwordKey: admin-password
+          sidecar:
+            dashboards: {enabled: true, searchNamespace: ALL}
+        prometheus:
+          prometheusSpec:
+            retention: 24h
+            serviceMonitorSelectorNilUsesHelmValues: false
+            podMonitorSelectorNilUsesHelmValues: false
+            ruleSelectorNilUsesHelmValues: false
+            resources:
+              requests: {cpu: 200m, memory: 512Mi}
+              limits: {cpu: '1', memory: 2Gi}
+  destination: {server: 'https://kubernetes.default.svc', namespace: monitoring}
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+---
+{{- end }}
+{{- if .Values.cloud.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: {name: modelops-karpenter, namespace: argocd, annotations: {argocd.argoproj.io/sync-wave: '-20'}}
+spec:
+  project: modelops-platform
+  source:
+    repoURL: public.ecr.aws/karpenter
+    chart: karpenter
+    targetRevision: 1.14.1
+    helm:
+      releaseName: karpenter
+      valuesObject:
+        serviceAccount: {name: karpenter}
+        nodeSelector: {modelops.io/pool: system}
+        settings:
+          clusterName: {{ required "cloud.clusterName is required" .Values.cloud.clusterName | quote }}
+          clusterEndpoint: {{ required "cloud.clusterEndpoint is required" .Values.cloud.clusterEndpoint | quote }}
+          interruptionQueue: {{ required "cloud.interruptionQueue is required" .Values.cloud.interruptionQueue | quote }}
+        controller:
+          resources:
+            requests: {cpu: 200m, memory: 256Mi}
+            limits: {cpu: '1', memory: 1Gi}
+  destination: {server: 'https://kubernetes.default.svc', namespace: kube-system}
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [ServerSideApply=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: {name: modelops-secrets, namespace: argocd, annotations: {argocd.argoproj.io/sync-wave: '-20'}}
+spec:
+  project: modelops-platform
+  source:
+    repoURL: https://charts.external-secrets.io
+    chart: external-secrets
+    targetRevision: 2.12.0
+    helm:
+      valuesObject:
+        serviceAccount: {name: external-secrets}
+  destination: {server: 'https://kubernetes.default.svc', namespace: external-secrets}
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+---
+{{- end }}
+{{- if .Values.gpu.enabled }}
+{{- if not .Values.cloud.enabled }}{{ fail "GPU capacity requires cloud.enabled=true" }}{{ end }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: {name: modelops-gpu-operator, namespace: argocd, annotations: {argocd.argoproj.io/sync-wave: '-10'}}
+spec:
+  project: modelops-platform
+  source:
+    repoURL: https://helm.ngc.nvidia.com/nvidia
+    chart: gpu-operator
+    targetRevision: v26.7.1
+    helm:
+      valuesObject:
+        # EKS AL2023 NVIDIA AMIs already own these two components.
+        driver: {enabled: false}
+        toolkit: {enabled: false}
+        mig: {strategy: none}
+        node-feature-discovery:
+          worker:
+            tolerations:
+              - {key: dedicated, operator: Equal, value: gpu, effect: NoSchedule}
+              - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+        dcgmExporter:
+          serviceMonitor: {enabled: true}
+        daemonsets:
+          tolerations:
+            - {key: dedicated, operator: Equal, value: gpu, effect: NoSchedule}
+            - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+  destination: {server: 'https://kubernetes.default.svc', namespace: gpu-operator}
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+{{- end }}

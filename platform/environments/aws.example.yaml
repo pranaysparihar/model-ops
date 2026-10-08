@@ -1,0 +1,17 @@
+# Copy Terraform's platform_values output into cloud below; these are identifiers,
+# never credentials. Commit the reviewed file as environments/aws.yaml.
+cloud:
+  enabled: true
+  region: us-east-1
+  clusterName: modelops-lab
+  clusterEndpoint: https://REPLACE.eks.amazonaws.com
+  nodeRole: modelops-lab-gpu-node
+  interruptionQueue: REPLACE
+  gatewaySecretArn: arn:aws:secretsmanager:us-east-1:123456789012:secret:REPLACE
+gpu:
+  enabled: false
+  amiID: ''
+  limit: 1
+workload:
+  enabled: false
+  imageTag: ''

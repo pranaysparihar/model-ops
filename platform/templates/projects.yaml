@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata: {name: modelops-platform, namespace: argocd, annotations: {argocd.argoproj.io/sync-wave: '-50'}}
+spec:
+  description: Operator-owned platform controllers; intentionally cluster-admin capable.
+  sourceRepos:
+    - {{ .Values.repoURL | quote }}
+    - https://prometheus-community.github.io/helm-charts
+    - https://helm.ngc.nvidia.com/nvidia
+    - https://charts.external-secrets.io
+    - public.ecr.aws/karpenter
+  destinations:
+    - {server: 'https://kubernetes.default.svc', namespace: '*'}
+  clusterResourceWhitelist:
+    - {group: '*', kind: '*'}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata: {name: modelops-workloads, namespace: argocd, annotations: {argocd.argoproj.io/sync-wave: '-50'}}
+spec:
+  description: Application releases may mutate only the modelops namespace.
+  sourceRepos: [{{ .Values.repoURL | quote }}]
+  destinations: [{server: 'https://kubernetes.default.svc', namespace: modelops}]
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - {group: apps, kind: Deployment}
+    - {group: '', kind: Service}
+    - {group: '', kind: PersistentVolumeClaim}
+    - {group: '', kind: ConfigMap}
+    - {group: policy, kind: PodDisruptionBudget}
+    - {group: networking.k8s.io, kind: NetworkPolicy}

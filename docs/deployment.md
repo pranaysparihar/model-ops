@@ -10,13 +10,8 @@ The default supported demonstration is `make kind`. For staging, first choose an
 
 The GPU profile requires NVIDIA drivers/device plugin, a node labeled `nvidia.com/gpu.present=true`, a default storage class for the model cache, adequate memory, and outbound model download access. Adjust placement and resources for actual hardware. The GPU profile is not yet hardware-tested.
 
-## GitHub deployment environment
+## Cloud delivery
 
-The manually triggered `Deploy verified image` workflow targets an environment named `staging`. Configure required reviewers in GitHub and these environment secrets:
+The AWS platform uses [Argo CD promotion](cloud-platform.md), replacing the earlier workflow that stored a staging kubeconfig. `Prepare GitOps promotion` now verifies a successful CI run and produces the chart SHA/image digest pair for a reviewed environment commit; it never receives cluster credentials or deploys directly.
 
-- `KUBECONFIG_B64`: base64-encoded, namespace-scoped staging kubeconfig with only the permissions needed for Helm-managed resources and port-forwarding.
-- `MODELOPS_API_KEY`: the existing API secret value, used only for functional verification.
-
-The runner must reach the Kubernetes API. Private clusters need an appropriately networked runner. The workflow checks that the requested full SHA has a successful main-branch CI run before deploying. Credentials are written with restrictive permissions and removed on exit. No long-lived cluster credentials are included in this repo.
-
-The initial implementation uses an environment kubeconfig for provider neutrality. Prefer cloud workload identity/OIDC when integrating a chosen cloud. Internet exposure is out of scope for this private lab; TLS ingress, path-level access, quotas, and tenant isolation need their own review.
+Use the standalone Helm procedure above only for clusters/releases not managed by Argo. Internet exposure remains outside this private lab; TLS ingress, end-user identity and egress restrictions need an explicit design.

@@ -1,7 +1,9 @@
 image:
   repository: modelops
   tag: local
+  digest: ""
   pullPolicy: IfNotPresent
+imagePullSecrets: []
 replicas: 2
 apiKeySecret: modelops-api-key
 model: demo-model
@@ -9,6 +11,8 @@ maxInflight: 4
 maxTokens: 256
 timeoutSeconds: 10
 backend:
+  replicas: 1
+  storageClassName: ""
   mode: simulator
   image: vllm/vllm-openai:v0.31.0
   model: Qwen/Qwen2.5-0.5B-Instruct

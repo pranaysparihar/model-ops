@@ -17,6 +17,7 @@ spec:
     metadata:
       labels: {app: {{ .Release.Name }}-gateway, modelops-role: gateway}
     spec:
+      imagePullSecrets: {{ .Values.imagePullSecrets | toJson }}
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
@@ -25,7 +26,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: gateway
-          image: '{{ .Values.image.repository }}:{{ .Values.image.tag }}'
+          image: '{{ .Values.image.repository }}{{ if .Values.image.digest }}@{{ .Values.image.digest }}{{ else }}:{{ .Values.image.tag }}{{ end }}'
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports: [{containerPort: 8000, name: http}]
           securityContext:
@@ -77,7 +78,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: {name: {{ .Release.Name }}-backend}
 spec:
-  replicas: 1
+  replicas: {{ .Values.backend.replicas }}
   strategy: {type: Recreate}
   selector:
     matchLabels: {app: {{ .Release.Name }}-backend}
@@ -85,6 +86,7 @@ spec:
     metadata:
       labels: {app: {{ .Release.Name }}-backend, modelops-role: backend}
     spec:
+      imagePullSecrets: {{ .Values.imagePullSecrets | toJson }}
       automountServiceAccountToken: false
       {{- if eq .Values.backend.mode "vllm" }}
       nodeSelector: {{ .Values.backend.nodeSelector | toJson }}
@@ -99,7 +101,7 @@ spec:
       containers:
         - name: backend
           {{- if eq .Values.backend.mode "simulator" }}
-          image: '{{ .Values.image.repository }}:{{ .Values.image.tag }}'
+          image: '{{ .Values.image.repository }}{{ if .Values.image.digest }}@{{ .Values.image.digest }}{{ else }}:{{ .Values.image.tag }}{{ end }}'
           command: [uvicorn, 'app.simulator:app', '--host', '0.0.0.0', '--port', '8001', '--no-access-log']
           resources:
             requests: {cpu: 100m, memory: 128Mi}
@@ -159,6 +161,9 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata: {name: {{ .Release.Name }}-model-cache}
 spec:
+  {{- if .Values.backend.storageClassName }}
+  storageClassName: {{ .Values.backend.storageClassName | quote }}
+  {{- end }}
   accessModes: [ReadWriteOnce]
   resources:
     requests: {storage: {{ .Values.backend.storageSize }}}

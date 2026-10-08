@@ -1,36 +1,59 @@
 # ModelOps
 
-**Ship an AI service. Prove you can operate it.**
+**Infrastructure for operating a private GPU inference service.**
 
 [![Verify platform](https://github.com/pranaysparihar/model-ops/actions/workflows/ci.yml/badge.svg)](https://github.com/pranaysparihar/model-ops/actions/workflows/ci.yml)
 
-ModelOps is a DevOps/SRE reference implementation for a small team moving an AI API from a developer's machine to a shared service. Its purpose is to reduce manual deployment work, bound failures, and make recovery repeatable.
+ModelOps gives a small team a repeatable path from a model container to a controlled GPU service: AWS infrastructure, workload identity, GitOps delivery, GPU scheduling, resource isolation and operational evidence. vLLM supplies inference; this project owns the infrastructure around it.
 
-The engineering question is: **Can a developer release a change, detect a broken rollout, restore the previous version, and explain the service's reliability using evidence?**
+**Intent:** replace hand-configured GPU servers and ad hoc releases with a platform whose access, capacity, cost and recovery decisions an operator can explain. [Hiring research and engineering decisions](docs/hiring-signal.md) map the work to requirements in platform and GPU infrastructure roles.
 
-This is a working local lab and a GPU deployment profile, not a claim of production traffic or uptime. The default backend is explicitly a deterministic CPU simulator. vLLM is the upstream inference engine in the optional GPU profile; ModelOps owns the gateway, delivery workflow, monitoring configuration, and recovery exercises.
+## What is implemented
 
-## What it does
+| Layer | Implementation |
+|---|---|
+| AWS infrastructure | Terraform: two-AZ VPC, private EKS workers, system node group, access entries, flow logs, protected remote state |
+| Workload identity | EKS Pod Identity for controllers; External Secrets can read only the gateway secret; no API secret in Terraform state |
+| GPU capacity | Karpenter pool, reviewed NVIDIA AMI, dedicated taints, GPU quota, empty-node consolidation, explicit capacity/cost trade-offs |
+| GPU operations | GPU Operator with one driver owner, DCGM dashboards and tested alerts, pending-pod/driver/memory runbooks |
+| Delivery | Argo CD projects and controller applications, manually promoted chart SHA + image digest, CI-generated SBOM/provenance |
+| Isolation | Restricted Pod Security, namespace resource quota, default-deny ingress and explicit service paths |
+| Verification | Mocked Terraform plans, chart contract tests, real Cilium enforcement/admission tests and existing rollback/recovery drills |
 
-- Authenticated, non-streaming OpenAI-compatible completion gateway with per-replica concurrency limits, capped input/output, and hard backend deadlines.
-- Docker Compose environment with Prometheus and a provisioned Grafana dashboard.
-- Helm deployment with two gateway replicas, resource budgets, readiness/liveness separation, disruption budget, and backend ingress policy.
-- Safe release script: readiness failure rolls back via Helm; functional smoke failure restores the previous deployed revision.
-- CI creates a disposable Kubernetes cluster, deploys the service, attempts a deliberately broken release, checks functional-failure rollback, replaces a backend pod, and verifies a real completion.
-- CI scans the gateway image for fixable high/critical vulnerabilities. Successful main-branch verification publishes a commit-tagged container and SBOM to GHCR. A separate manual staging workflow deploys only a revision with a successful CI run.
-- A request-based SLO definition, alert rules, operational runbook, and explicit cost/capacity trade-offs.
+**Evidence boundary:** local Kubernetes, network enforcement, admission, gateway behavior and Terraform mock tests have been exercised. The EKS/GPU configuration still requires cloud and hardware acceptance. No GPU benchmarks, cost savings, production traffic or uptime are claimed. The CPU simulator is explicitly a test fixture.
 
 ```mermaid
 flowchart LR
-    Developer --> CI[Tests + chart checks]
-    CI --> Lab[kind: deployment + recovery drills]
-    Lab --> Registry[GHCR: commit-tagged image + SBOM]
-    Registry --> Release[Helm release + functional verification]
-    Release --> Gateway[Bounded API gateway]
-    Gateway --> Backend[CPU simulator OR vLLM GPU backend]
-    Gateway --> Metrics[Prometheus]
-    Metrics --> Dashboard[Grafana]
+    Terraform --> EKS[Private EKS / CPU controllers]
+    Git[Reviewed Git revision] --> Argo[Argo CD]
+    Argo --> Capacity[Karpenter / dedicated GPU pool]
+    Argo --> Workload[Digest-pinned gateway + vLLM]
+    Capacity --> Workload
+    IAM[Pod Identity / Secrets Manager] --> Workload
+    Workload --> Metrics[Prometheus / DCGM / Grafana]
+    CI[Tests / isolation / recovery / image scan] --> Registry[GHCR / digest / SBOM]
+    Registry --> Git
 ```
+
+[Cloud platform guide](docs/cloud-platform.md) · [GPU incident runbook](docs/gpu-runbook.md) · [Validation evidence](docs/validation.md)
+
+## Test the infrastructure without an AWS account
+
+```sh
+# Requires Terraform >=1.10, Helm, Python test dependencies.
+for root in infra/state infra/aws; do
+  terraform -chdir="$root" init -backend=false
+  terraform -chdir="$root" validate
+  terraform -chdir="$root" test
+done
+pytest -q tests/test_platform.py
+
+# Docker + kind: real Cilium enforcement, GPU quota and Pod Security admission.
+# Creates and cleans up only the named modelops-policy cluster.
+./scripts/infra/policy-lab.sh
+```
+
+The quota test reserves an abstract GPU resource on a CPU cluster. It proves admission, not GPU scheduling. [AWS setup](docs/cloud-platform.md) is a separate, operator-run procedure with real costs; these tests never provision AWS.
 
 ## Try it locally — no GPU or cloud account
 
@@ -74,7 +97,7 @@ Drill logs are saved under ignored `artifacts/`; CI uploads them as `recovery-ev
 
 The [GPU profile](deploy/environments/gpu.yaml) selects vLLM and one NVIDIA GPU. It requires a GPU-enabled Kubernetes cluster, the NVIDIA device plugin, matching node labels, a default storage class, and access to the model registry. This profile is rendered and structurally checked in CI; it needs hardware validation before use. Model licenses are separate from this repository's MIT license.
 
-See [deployment instructions](docs/deployment.md). No cloud account is selected or charged by the local setup.
+The AWS path adds GPU capacity and controller configuration; see [the cloud platform guide](docs/cloud-platform.md). The independent existing-cluster path is documented in [deployment instructions](docs/deployment.md). No cloud account is selected or charged by the local setup.
 
 ## Intent, evidence, and boundaries
 
@@ -96,8 +119,8 @@ See [deployment instructions](docs/deployment.md). No cloud account is selected 
 - Concurrency is bounded per gateway process. Run one worker per pod; total upstream concurrency is approximately replicas × limit. There is no shared queue or per-user quota.
 - Monitoring storage is ephemeral and alert delivery is not configured. Prometheus evaluates rules; routing notifications needs an Alertmanager receiver owned by the operator.
 - Services are private ClusterIP/localhost. Internet deployment needs TLS, ingress path restrictions, tenant identity, quotas, and network controls. Do not expose `/metrics` publicly.
-- kind's default CNI does not enforce NetworkPolicy. The policy must be validated with the CNI used by the target cluster.
-- No automatic GPU scaling, multi-tenancy, distributed rate limiting, or cloud provisioning is claimed. The current infrastructure target is reproducible local Kubernetes; choose a provider before adding Terraform.
+- The original kind lab's default CNI does not enforce NetworkPolicy. The separate Cilium lab proves local ingress enforcement; AWS VPC CNI still needs its own acceptance test.
+- Karpenter node provisioning is configured but not cloud-tested. Request-driven model autoscaling, complete hostile multi-tenancy and distributed rate limiting are outside this release.
 
 ## Development
 

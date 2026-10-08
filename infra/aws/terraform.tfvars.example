@@ -1,0 +1,9 @@
+region = "us-east-1"
+cluster_name = "modelops-lab"
+environment = "lab"
+admin_role_arn = "arn:aws:iam::123456789012:role/ModelOpsOperator"
+admin_cidrs = [] # Private API: run bootstrap from a connected operator host/VPN.
+ha_nat = false # Lab trade-off; enable for one NAT per AZ.
+monthly_budget_usd = 100 # Alert threshold, NOT a spending cap or cost estimate.
+budget_email = "" # Optional; no alert subscription without an address.
+# Pin addon_versions after checking AWS compatibility with your selected EKS version.

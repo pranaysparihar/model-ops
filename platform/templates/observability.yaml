@@ -1,0 +1,38 @@
+{{- if .Values.monitoring.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata: {name: modelops-workloads, namespace: monitoring, annotations: {argocd.argoproj.io/sync-wave: '2'}}
+spec:
+  namespaceSelector: {matchNames: [modelops]}
+  selector:
+    matchLabels: {modelops-role: gateway}
+  podMetricsEndpoints: [{port: http, path: /metrics, interval: 15s}]
+{{- if .Values.gpu.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata: {name: modelops-vllm, namespace: monitoring, annotations: {argocd.argoproj.io/sync-wave: '2'}}
+spec:
+  namespaceSelector: {matchNames: [modelops]}
+  selector:
+    matchLabels: {modelops-role: backend}
+  podMetricsEndpoints: [{port: http, path: /metrics, interval: 15s}]
+{{- end }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata: {name: modelops-gpu, namespace: monitoring, annotations: {argocd.argoproj.io/sync-wave: '2'}}
+spec:
+{{ .Files.Get "files/gpu-rules.yml" | indent 2 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: modelops-gpu-dashboard
+  namespace: monitoring
+  labels: {grafana_dashboard: '1'}
+  annotations: {argocd.argoproj.io/sync-wave: '2'}
+data:
+  gpu-platform.json: |
+{{ .Files.Get "files/gpu-dashboard.json" | indent 4 }}
+{{- end }}

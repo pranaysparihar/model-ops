@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: modelops
+  annotations: {argocd.argoproj.io/sync-wave: '-40'}
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: {name: modelops-capacity, namespace: modelops, annotations: {argocd.argoproj.io/sync-wave: '2'}}
+spec:
+  hard:
+    requests.nvidia.com/gpu: {{ .Values.gpu.limit | quote }}
+    requests.cpu: '8'
+    requests.memory: 16Gi
+    limits.cpu: '16'
+    limits.memory: 32Gi
+    pods: '15'
+    persistentvolumeclaims: '3'
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny-ingress, namespace: modelops, annotations: {argocd.argoproj.io/sync-wave: '2'}}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: gateway-ingress, namespace: modelops, annotations: {argocd.argoproj.io/sync-wave: '2'}}
+spec:
+  podSelector: {matchLabels: {modelops-role: gateway}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: ingress-system}}
+      ports: [{protocol: TCP, port: 8000}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: backend-monitoring, namespace: modelops, annotations: {argocd.argoproj.io/sync-wave: '2'}}
+spec:
+  podSelector: {matchLabels: {modelops-role: backend}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}
+      ports: [{protocol: TCP, port: 8001}]
+{{- if .Values.cloud.enabled }}
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata: {name: aws-secrets, namespace: modelops, annotations: {argocd.argoproj.io/sync-wave: '2'}}
+spec:
+  provider:
+    aws:
+      service: SecretsManager
+      region: {{ .Values.cloud.region }}
+      # Uses the ESO controller's EKS Pod Identity, scoped to one secret ARN.
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata: {name: modelops-api-key, namespace: modelops, annotations: {argocd.argoproj.io/sync-wave: '3'}}
+spec:
+  refreshInterval: 1h
+  secretStoreRef: {name: aws-secrets, kind: SecretStore}
+  target: {name: modelops-api-key, creationPolicy: Owner}
+  data:
+    - secretKey: api-key
+      remoteRef:
+        key: {{ required "cloud.gatewaySecretArn is required" .Values.cloud.gatewaySecretArn | quote }}
+{{- end }}

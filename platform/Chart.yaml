@@ -1,0 +1,4 @@
+apiVersion: v2
+name: modelops-platform
+version: 0.2.0
+description: GitOps platform composition for EKS GPU infrastructure

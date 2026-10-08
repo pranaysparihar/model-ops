@@ -18,12 +18,12 @@ jobs:
           python-version: '3.12'
           cache: pip
       - run: pip install -r requirements-dev.txt
-      - run: pytest -q --junitxml=artifacts/tests.xml
-      - run: ruff check app tests scripts
-      - run: python scripts/native-check.py
       - uses: azure/setup-helm@v4.3.0
         with:
           version: v3.17.3
+      - run: pytest -q --junitxml=artifacts/tests.xml
+      - run: ruff check app tests scripts
+      - run: python scripts/native-check.py
       - run: |
           helm lint deploy/chart
           helm template modelops deploy/chart --set monitoring.enabled=true > artifacts/simulator.yaml
@@ -63,7 +63,7 @@ jobs:
           name: recovery-evidence
           path: artifacts/
   publish:
-    needs: [test, integration]
+    needs: [test, integration, infrastructure, isolation]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -78,9 +78,66 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/build-push-action@v6
+        id: image
         with:
           context: .
           push: true
           tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
           sbom: true
           provenance: mode=max
+      - name: Record release identity
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          mkdir -p artifacts
+          printf '%s\n' "$IMAGE_DIGEST" > artifacts/image-digest.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-identity
+          path: artifacts/image-digest.txt
+  infrastructure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.5
+      - uses: azure/setup-helm@v4.3.0
+        with:
+          version: v3.17.3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements-dev.txt
+      - name: Validate AWS configuration without cloud credentials
+        run: |
+          terraform fmt -check -recursive infra
+          for root in infra/state infra/aws; do
+            terraform -chdir="$root" init -backend=false -input=false -lockfile=readonly
+            terraform -chdir="$root" validate
+            terraform -chdir="$root" test -no-color
+          done
+      - name: Check platform contracts and GPU alerts
+        run: |
+          helm lint platform
+          pytest -q tests/test_platform.py
+          cmp observability/gpu/rules.yml platform/files/gpu-rules.yml
+          cmp observability/gpu/dashboard.json platform/files/gpu-dashboard.json
+          docker run --rm --entrypoint promtool -v "$PWD/observability/gpu:/rules" -w /rules prom/prometheus:v3.15.0 test rules tests.yml
+  isolation:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4.3.0
+        with:
+          version: v3.17.3
+      - uses: helm/kind-action@v1.12.0
+        with:
+          install_only: true
+      - run: ./scripts/infra/policy-lab.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: network-and-admission-evidence
+          path: artifacts/

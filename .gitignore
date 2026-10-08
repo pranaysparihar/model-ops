@@ -9,3 +9,8 @@ __pycache__/
 .terraform/
 artifacts/
 .DS_Store
+*.tfvars
+*.tfplan
+backend.hcl
+platform/generated/
+*.secret.yaml

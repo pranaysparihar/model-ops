@@ -23,4 +23,15 @@ Raw results: [baseline](evidence/baseline-simulator.json), [overload](evidence/o
 
 ## Not verified or claimed
 
-Actual GPU inference, model accuracy, NVIDIA scheduling, hardware-dependent vLLM startup, enforced NetworkPolicy on kind's default CNI, cloud costs, externally routed alert notifications, continuous uptime, and production traffic. No SLO attainment or customer adoption is claimed.
+Actual GPU inference, model accuracy, NVIDIA scheduling, hardware-dependent vLLM startup, EKS provisioning, AWS Pod Identity/Secrets Manager delivery, AWS VPC CNI enforcement, cloud Argo reconciliation, cloud costs, externally routed alert notifications, continuous uptime, and production traffic. No SLO attainment or customer adoption is claimed.
+
+## Infrastructure extension — 8 October 2026
+
+- Terraform 1.16.5 validated both AWS and state-bootstrap roots against the downloaded, locked providers and pinned modules.
+- Five mocked Terraform tests passed: secure state, private defaults/scoped secret IAM, rejected public `/0` API access, rejected IAM user operator, and optional budget activation. Mock tests do not contact AWS.
+- The pinned Argo CD, Karpenter, GPU Operator, External Secrets and kube-prometheus-stack charts rendered successfully with the composed values.
+- Ten platform rendering tests cover fail-closed GPU enablement, AMI requirements, digest/revision promotion, manual workload sync, restricted Argo project, quota and driver ownership contracts.
+- Promtool GPU rule tests exercise hardware-error and memory-pressure firing, telemetry absence, healthy telemetry and CPU-only no-alert behavior.
+- The isolated kind 1.35 / Cilium 1.20.2 lab exercised real traffic: monitoring reached gateway/backend, the untrusted namespace timed out against both, a second one-GPU reservation failed quota admission, and a privileged pod failed restricted Pod Security admission. The disposable cluster was deleted afterward.
+
+Raw local report: [network and admission evidence](evidence/policy-evidence.json). CI repeats these checks; mock/unit tests and local CNI enforcement remain distinct from cloud/hardware acceptance. `scripts/infra/gpu-acceptance.py` is available for a future real-device run and has not generated hardware evidence yet.

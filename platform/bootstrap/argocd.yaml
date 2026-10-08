@@ -1,0 +1,15 @@
+server:
+  service: {type: ClusterIP}
+configs:
+  params:
+    server.insecure: false
+  cm:
+    resource.customizations.health.argoproj.io_Application: |
+      hs = {status = "Progressing", message = "Waiting for child application"}
+      if obj.status ~= nil and obj.status.health ~= nil then
+        hs.status = obj.status.health.status
+        hs.message = obj.status.health.message or ""
+      end
+      return hs
+  rbac:
+    policy.default: role:readonly

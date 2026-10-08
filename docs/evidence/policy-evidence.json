@@ -1,0 +1,32 @@
+{
+  "timestamp": "2026-10-08T17:07:58.660566+00:00",
+  "context": "kind-modelops-policy",
+  "cni": "Cilium 1.20.2",
+  "gpu_hardware_tested": false,
+  "checks": [
+    {
+      "check": "monitoring-to-gateway",
+      "result": "allowed"
+    },
+    {
+      "check": "monitoring-to-backend",
+      "result": "allowed"
+    },
+    {
+      "check": "untrusted-to-gateway",
+      "result": "blocked-timeout"
+    },
+    {
+      "check": "untrusted-to-backend",
+      "result": "blocked-timeout"
+    },
+    {
+      "check": "second-gpu-reservation",
+      "result": "rejected-by-quota"
+    },
+    {
+      "check": "privileged-workload",
+      "result": "rejected-by-pod-security"
+    }
+  ]
+}

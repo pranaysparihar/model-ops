@@ -1,0 +1,55 @@
+rule_files: [rules.yml]
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'DCGM_FI_DEV_XID_ERRORS{gpu="0"}'
+        values: '79+0x20'
+      - series: 'DCGM_FI_DEV_FB_USED{gpu="0"}'
+        values: '970+0x20'
+      - series: 'DCGM_FI_DEV_FB_FREE{gpu="0"}'
+        values: '30+0x20'
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: GPUHardwareError
+        exp_alerts:
+          - exp_labels: {gpu: '0', severity: critical, team: platform}
+            exp_annotations:
+              summary: NVIDIA driver reports an XID error
+              runbook_url: https://github.com/pranaysparihar/model-ops/blob/main/docs/gpu-runbook.md#hardware-error
+      - eval_time: 11m
+        alertname: GPUMemoryPressure
+        exp_alerts:
+          - exp_labels: {gpu: '0', severity: warning, team: platform}
+            exp_annotations:
+              summary: GPU framebuffer memory stays above 95 percent
+              runbook_url: https://github.com/pranaysparihar/model-ops/blob/main/docs/gpu-runbook.md#memory-pressure
+  - interval: 1m
+    input_series:
+      - series: 'kube_node_status_allocatable{resource="nvidia_com_gpu",node="gpu-node"}'
+        values: '1+0x20'
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: GPUTelemetryMissing
+        exp_alerts:
+          - exp_labels: {severity: warning, team: platform}
+            exp_annotations:
+              summary: Cluster advertises GPUs but DCGM telemetry is absent
+              runbook_url: https://github.com/pranaysparihar/model-ops/blob/main/docs/gpu-runbook.md#missing-telemetry
+  - interval: 1m
+    input_series:
+      - series: 'kube_node_status_allocatable{resource="nvidia_com_gpu",node="gpu-node"}'
+        values: '1+0x20'
+      - series: 'DCGM_FI_DEV_GPU_UTIL{gpu="0"}'
+        values: '0+0x20'
+      - series: 'DCGM_FI_DEV_XID_ERRORS{gpu="0"}'
+        values: '0+0x20'
+    alert_rule_test:
+      - {eval_time: 11m, alertname: GPUTelemetryMissing, exp_alerts: []}
+      - {eval_time: 11m, alertname: GPUHardwareError, exp_alerts: []}
+  - interval: 1m
+    input_series:
+      - series: 'kube_node_status_allocatable{resource="nvidia_com_gpu",node="cpu-node"}'
+        values: '0+0x20'
+    alert_rule_test:
+      - {eval_time: 11m, alertname: GPUTelemetryMissing, exp_alerts: []}

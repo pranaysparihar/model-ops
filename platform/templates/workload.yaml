@@ -1,0 +1,42 @@
+{{- if .Values.workload.enabled }}
+{{- if not (regexMatch "^[0-9a-f]{40}$" .Values.workload.imageTag) }}{{ fail "workload.imageTag must be a verified full commit SHA" }}{{ end }}
+{{- if not (regexMatch "^sha256:[0-9a-f]{64}$" .Values.workload.imageDigest) }}{{ fail "workload.imageDigest must identify the verified registry manifest" }}{{ end }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: {name: modelops-inference, namespace: argocd, annotations: {argocd.argoproj.io/sync-wave: '10'}}
+spec:
+  project: modelops-workloads
+  source:
+    repoURL: {{ .Values.repoURL | quote }}
+    # Chart and image move together; platform controllers have independent pins.
+    targetRevision: {{ .Values.workload.imageTag | quote }}
+    path: deploy/chart
+    helm:
+      releaseName: modelops
+      valuesObject:
+        image:
+          repository: {{ .Values.workload.imageRepository | quote }}
+          tag: {{ .Values.workload.imageTag | quote }}
+          digest: {{ .Values.workload.imageDigest | quote }}
+        imagePullSecrets: [{name: ghcr-pull}]
+        backend:
+          replicas: {{ .Values.workload.replicas }}
+          {{- if .Values.gpu.enabled }}
+          mode: vllm
+          nodeSelector: {modelops.io/pool: gpu}
+          tolerations: [{key: dedicated, operator: Equal, value: gpu, effect: NoSchedule}]
+          storageClassName: modelops-gp3
+          {{- else }}
+          mode: simulator
+          {{- end }}
+        {{- if .Values.gpu.enabled }}
+        model: Qwen/Qwen2.5-0.5B-Instruct
+        timeoutSeconds: 60
+        maxTokens: 128
+        {{- end }}
+        monitoring: {enabled: false}
+  destination: {server: 'https://kubernetes.default.svc', namespace: modelops}
+  # Deliberate manual sync for workload promotion. Controllers self-heal separately.
+  syncPolicy:
+    syncOptions: [ServerSideApply=true]
+{{- end }}

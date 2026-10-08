@@ -1,0 +1,24 @@
+repoURL: https://github.com/pranaysparihar/model-ops.git
+cloud:
+  enabled: false
+  region: us-east-1
+  clusterName: ''
+  clusterEndpoint: ''
+  nodeRole: ''
+  interruptionQueue: ''
+  gatewaySecretArn: ''
+gpu:
+  enabled: false
+  # Exact EKS AL2023 NVIDIA AMI ID, resolved and reviewed by the operator.
+  amiID: ''
+  instanceTypes: [g5.xlarge, g6.xlarge]
+  capacityType: on-demand
+  limit: 1
+workload:
+  enabled: false
+  imageRepository: ghcr.io/pranaysparihar/model-ops
+  imageTag: ''
+  imageDigest: ''
+  replicas: 1
+monitoring:
+  enabled: true

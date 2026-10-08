@@ -1,55 +1,33 @@
-name: Deploy verified image
+name: Prepare GitOps promotion
 on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: 'Full commit SHA from a successful Verify platform run'
+        description: Full main-branch commit SHA whose Verify platform run succeeded
         required: true
-      profile:
-        description: Deployment profile
-        type: choice
-        options: [simulator, gpu]
-        default: simulator
 permissions:
   contents: read
   actions: read
-concurrency:
-  group: staging-deployment
-  cancel-in-progress: false
 jobs:
-  deploy:
+  prepare:
     runs-on: ubuntu-latest
-    environment: staging
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.image_tag }}
-      - uses: azure/setup-helm@v4.3.0
-        with:
-          version: v3.17.3
-      - name: Verify requested revision passed CI
+      - name: Verify release and download its build digest
         env:
           GH_TOKEN: ${{ github.token }}
           IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
-          [[ "$IMAGE_TAG" =~ ^[0-9a-f]{40}$ ]]
-          gh run list --workflow ci.yml --commit "$IMAGE_TAG" --event push --status success --json headBranch --jq '.[].headBranch' | grep -qx main
-      - name: Load staging credentials and deploy
-        env:
-          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
-          API_KEY: ${{ secrets.MODELOPS_API_KEY }}
-          IMAGE_TAG: ${{ inputs.image_tag }}
-          PROFILE: ${{ inputs.profile }}
-          IMAGE_REPOSITORY: ghcr.io/${{ github.repository }}
-        run: |
           set -euo pipefail
-          umask 077
-          export KUBECONFIG="$RUNNER_TEMP/modelops.kubeconfig"
-          trap 'rm -f "$KUBECONFIG"' EXIT
-          printf '%s' "$KUBECONFIG_B64" | base64 --decode > "$KUBECONFIG"
-          KUBE_CONTEXT=$(kubectl config current-context)
-          export KUBE_CONTEXT
-          if [[ "$PROFILE" == gpu ]]; then
-            export VALUES_FILE=deploy/environments/gpu.yaml MODEL=Qwen/Qwen2.5-0.5B-Instruct HELM_TIMEOUT=20m
-          fi
-          ./scripts/deploy.sh
+          [[ "$IMAGE_TAG" =~ ^[0-9a-f]{40}$ ]]
+          RUN_ID=$(gh run list --workflow ci.yml --commit "$IMAGE_TAG" --event push --status success --json headBranch,databaseId --jq '[.[] | select(.headBranch == "main")][0].databaseId')
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          gh run download "$RUN_ID" --name image-identity --dir artifacts
+          DIGEST=$(cat artifacts/image-digest.txt)
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          printf 'workload:\n  imageTag: "%s"\n  imageDigest: "%s"\n' "$IMAGE_TAG" "$DIGEST" > artifacts/promotion-values.yaml
+          printf 'Review these values in your platform environment, commit them, then sync Argo CD. No cluster credentials are used here.\n' > artifacts/README.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reviewed-promotion-inputs
+          path: artifacts/

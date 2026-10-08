@@ -1,0 +1,52 @@
+{{- if .Values.gpu.enabled }}
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata: {name: modelops-gpu, annotations: {argocd.argoproj.io/sync-wave: '0'}}
+spec:
+  role: {{ required "cloud.nodeRole is required" .Values.cloud.nodeRole | quote }}
+  amiFamily: AL2023
+  amiSelectorTerms:
+    - id: {{ required "Supply a reviewed EKS NVIDIA gpu.amiID" .Values.gpu.amiID | quote }}
+  subnetSelectorTerms:
+    - tags: {karpenter.sh/discovery: {{ .Values.cloud.clusterName | quote }}}
+  securityGroupSelectorTerms:
+    - tags: {karpenter.sh/discovery: {{ .Values.cloud.clusterName | quote }}}
+  metadataOptions:
+    httpEndpoint: enabled
+    httpTokens: required
+    httpPutResponseHopLimit: 1
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs: {volumeSize: 100Gi, volumeType: gp3, encrypted: true, deleteOnTermination: true}
+  tags: {Project: ModelOps, Workload: GPU}
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata: {name: modelops-gpu, annotations: {argocd.argoproj.io/sync-wave: '1'}}
+spec:
+  limits:
+    nvidia.com/gpu: {{ .Values.gpu.limit | quote }}
+    cpu: '16'
+    memory: 64Gi
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 5m
+    budgets: [{nodes: '1'}]
+  template:
+    metadata:
+      labels: {modelops.io/pool: gpu}
+    spec:
+      nodeClassRef: {group: karpenter.k8s.aws, kind: EC2NodeClass, name: modelops-gpu}
+      taints: [{key: dedicated, value: gpu, effect: NoSchedule}]
+      requirements:
+        - {key: kubernetes.io/arch, operator: In, values: [amd64]}
+        - {key: kubernetes.io/os, operator: In, values: [linux]}
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: {{ .Values.gpu.instanceTypes | toJson }}
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: [{{ .Values.gpu.capacityType | quote }}]
+      expireAfter: 168h
+      terminationGracePeriod: 10m
+{{- end }}
